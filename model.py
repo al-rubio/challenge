@@ -44,9 +44,10 @@ class EnergyModel:
     def __init__(self, input_df, capex=False, **kwargs):
         self._energy_cost = kwargs.get('energy_cost', 0.22)
         self._grid_limit = kwargs.get('grid_limit', 485)
+        self._battery_cap = kwargs.get('battery_capacity', 534)
         wacc = kwargs.get('wacc', 0.05)
         project_life = kwargs.get('project_life', 10)
-        battery_capex = kwargs.get('battery_capex', 500)
+        battery_capex = kwargs.get('battery_capex', 417.45)
         battery_max_cap = kwargs.get('battery_max_cap', 1000)
         self._input_data = input_df
         df_index = input_df.index
@@ -71,16 +72,16 @@ class EnergyModel:
             sto_battery = GenericStorage(label='sto_battery',
                                          inputs={b_dist: Flow(max=400, nominal_value=1)},
                                          outputs={b_dist: Flow(max=400, nominal_value=1)},
-                                         nominal_storage_capacity=kwargs.get('battery_capacity'),
-                                         loss_rate=0.00, initial_storage_level=0,  # Todo: add energy loss
+                                         nominal_storage_capacity=self._battery_cap, balanced=True,
+                                         loss_rate=0.00, initial_storage_level=0.5,  # Todo: add energy loss
                                          inflow_conversion_factor=1, outflow_conversion_factor=1)
         else:
             epc_battery = economics.annuity(capex=battery_capex, n=project_life, wacc=wacc)
             sto_battery = GenericStorage(label='sto_battery',
                                          inputs={b_dist: Flow(max=400, nominal_value=1)},
-                                         outputs={b_dist: Flow(max=400, nominal_value=1)},
+                                         outputs={b_dist: Flow(max=400, nominal_value=1)}, balanced=True,
                                          investment=Investment(ep_costs=epc_battery, maximum=battery_max_cap),
-                                         loss_rate=0.00, initial_storage_level=0,  # Todo: add energy loss
+                                         loss_rate=0.00, initial_storage_level=0.5,  # Todo: add energy loss
                                          inflow_conversion_factor=1, outflow_conversion_factor=1)
 
         self._energy_system.add(sto_battery)
@@ -108,10 +109,10 @@ class EnergyModel:
             r_dict['pv_curtailed'] = results_keys[('b_prod', 'b_exp')]['sequences']
             r_dict['battery'] = results_keys[('sto_battery', 'b_dist')]['sequences'] - \
                                 results_keys[('b_dist', 'sto_battery')]['sequences']
+            r_dict['battery_soc'] = results_keys[('sto_battery', 'None')]['sequences'] / self._battery_cap
             r_dict['grid'] = results_keys[('m_grid', 'b_dist')]['sequences']
             r_df = pd.concat(r_dict.values(), axis=1, sort=False)
             r_df.columns = r_dict.keys()
-
 
             return r_df
             ############################################################
