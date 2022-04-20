@@ -40,7 +40,7 @@ df400energy = df400[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power
 df400energy.columns = ['load', 'battery', 'grid', 'pv']
 
 
-class EnergySystem:
+class EnergyModel:
     def __init__(self, input_df, capex=False, **kwargs):
         self._energy_cost = kwargs.get('energy_cost', 0.22)
         self._grid_limit = kwargs.get('grid_limit', 485)
@@ -141,6 +141,6 @@ if __name__ == '__main__':
                         date_parser=dateutil.parser.parse)
     df500energy = df500[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
     df500energy.columns = ['load', 'battery', 'grid', 'pv']
-    es = EnergySystem(input_df=df500energy, capex=False, **KWARGS)
+    es = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
     es.solve()
     result = es.results()
