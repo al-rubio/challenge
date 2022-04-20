@@ -43,41 +43,41 @@ energy_system = EnergySystem(timeindex=df_index)
 
 # main buses
 b_dist = Bus(label='b_dist')
-b_prod = Bus(label='b_prod', outputs={b_dist: Flow()})
 b_exp = Bus(label='b_exp')
-energy_system.add(b_dist, b_prod, b_exp)
+b_prod = Bus(label='b_prod', outputs={b_dist: Flow(), b_exp: Flow()})
+s_exp = Sink(label='s_exp', inputs={b_exp: Flow()})
+energy_system.add(b_dist, b_prod, b_exp, s_exp)
 
 # pv source
 s_pv = Source(label='s_pv',
-              outputs={b_prod: Flow(fix=df400energy['pv'], nominal_value=1),
-                       b_exp: Flow()})
+              outputs={b_prod: Flow(fix=df400energy['pv'].values, nominal_value=1)})
 energy_system.add(s_pv)
 
 # battery storage
+sto_battery = GenericStorage(label='sto_battery',
+                             inputs={b_dist: Flow(max=400, nominal_value=1)},
+                             outputs={b_dist: Flow(max=400, nominal_value=1)},
+                             nominal_storage_capacity=534,
+                             loss_rate=0.00, initial_storage_level=0,  # Todo: add energy loss
+                             inflow_conversion_factor=1, outflow_conversion_factor=1)
+
+# battery_in = df400energy[df400energy['battery'] < 0]['battery'].reindex(df_index).replace(np.nan, 0)
+# battery_out = df400energy[df400energy['battery'] > 0]['battery'].reindex(df_index).replace(np.nan, 0)
 # sto_battery = GenericStorage(label='sto_battery',
-#                              inputs={b_dist: Flow(max=400, nominal_value=1)},
-#                              outputs={b_dist: Flow(max=400, nominal_value=1)},
+#                              inputs={b_dist: Flow(fix=battery_in,
+#                                                   nominal_value=1)},
+#                              outputs={b_dist: Flow(fix=battery_out,
+#                                                    nominal_value=1)},
 #                              nominal_storage_capacity=534,
 #                              loss_rate=0.00, initial_storage_level=0.5,  # Todo: add energy loss
 #                              inflow_conversion_factor=1, outflow_conversion_factor=0.85)
-battery_in = df400energy[df400energy['battery'] < 0]['battery'].reindex(df_index).replace(np.nan, 0)
-battery_out = df400energy[df400energy['battery'] > 0]['battery'].reindex(df_index).replace(np.nan, 0)
-sto_battery = GenericStorage(label='sto_battery',
-                             inputs={b_dist: Flow(fix=battery_in,
-                                                  nominal_value=1)},
-                             outputs={b_dist: Flow(fix=battery_out,
-                                                   nominal_value=1)},
-                             nominal_storage_capacity=534,
-                             loss_rate=0.00, initial_storage_level=0.5,  # Todo: add energy loss
-                             inflow_conversion_factor=1, outflow_conversion_factor=0.85)
 energy_system.add(sto_battery)
 
 # external markets
 m_grid = Source(label='m_grid',
-                outputs={b_dist: Flow(variable_costs=ENERGY_COST, max=GRID_LIMIT_400,
-                                      nominal_value=1)})
+                outputs={b_dist: Flow(variable_costs=ENERGY_COST, max=400, nominal_value=1)})
 load = Sink(label='load',
-            inputs={b_dist: Flow(fix=df400energy['load'], nominal_value=1)})
+            inputs={b_dist: Flow(fix=df400energy['load'].values, nominal_value=1)})
 energy_system.add(m_grid, load)
 
 # dispatch optimization
@@ -86,22 +86,25 @@ model = Model(energy_system)
 model.solve(solver='cbc')
 
 # results
-
-r_dict = dict()
-results = processing.results(model)
-results_keys = views.convert_keys_to_strings(results)
 try:
-    r_dict['pv_self'] = results_keys[('s_pv', 'b_prod')]['sequences']
-    r_dict['pv_curtailed'] = results_keys[('s_pv', 'b_exp')]['sequences']
+    r_dict = dict()
+    results = processing.results(model)
+    results_keys = views.convert_keys_to_strings(results)
+
+    r_dict['pv_self'] = results_keys[('b_prod', 'b_dist')]['sequences']
+    r_dict['pv_curtailed'] = results_keys[('b_prod', 'b_exp')]['sequences']
     r_dict['battery'] = results_keys[('sto_battery', 'b_dist')]['sequences'] - \
                         results_keys[('b_dist', 'sto_battery')]['sequences']
     r_dict['grid'] = results_keys[('m_grid', 'b_dist')]['sequences']
 
     ############################################################
     # comparison of results
+    pv_total_opt = r_dict['pv_self'] + r_dict['pv_curtailed']
+    pv_total_opt = pv_total_opt.sum()
+    pv_total_400 = df400['uncurtailed_solar_power'].sum() * 0.25
     selfconsumption_pv_opt = r_dict['pv_self'].sum()
-    selfconsumption_pv = (df400['uncurtailed_solar_power'] - df400['curtailed_power']).sum()
-    grid400 = df400['grid_power'].sum()
+    selfconsumption_pv = (df400['uncurtailed_solar_power'] - df400['curtailed_power']).sum() * 0.25
+    grid400 = df400['grid_power'].sum() * 0.25
     grid400_opt = r_dict['grid'].sum()
 except:
     pass
