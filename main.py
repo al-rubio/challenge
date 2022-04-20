@@ -75,7 +75,7 @@ energy_system.add(sto_battery)
 
 # external markets
 m_grid = Source(label='m_grid',
-                outputs={b_dist: Flow(variable_costs=ENERGY_COST, max=400, nominal_value=1)})
+                outputs={b_dist: Flow(variable_costs=ENERGY_COST)})
 load = Sink(label='load',
             inputs={b_dist: Flow(fix=df400energy['load'].values, nominal_value=1)})
 energy_system.add(m_grid, load)
