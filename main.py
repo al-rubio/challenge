@@ -3,6 +3,7 @@ import dateutil
 import numpy as np
 from oemof.solph import (Bus, Sink, Source, EnergySystem, Model, Investment, GenericStorage,
                          Flow, processing, views)
+from oemof.tools import economics
 
 df400 = pd.read_csv('Results_400limit.csv', sep=",",
                     index_col='index',
@@ -33,78 +34,113 @@ pgrid_500_exceed = df500[df500['grid_power'] > 500]
 ENERGY_COST = 0.22  # EUR/kWh
 DEMAND_CHARGE = 200  # EUR/kWh
 PV_COST = 0.07  # EUR/kWh LCOE
-GRID_LIMIT_400 = 500  # kW grid limit 400 kW/ 400 kWh in 1h time steps
+GRID_LIMIT = 482.5  # kW grid limit 400 kW/ 400 kWh in 1h time steps
 
 df400energy = df400[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
 df400energy.columns = ['load', 'battery', 'grid', 'pv']
 
-df_index = df400energy.index
-energy_system = EnergySystem(timeindex=df_index)
 
-# main buses
-b_dist = Bus(label='b_dist')
-b_exp = Bus(label='b_exp')
-b_prod = Bus(label='b_prod', outputs={b_dist: Flow(), b_exp: Flow()})
-s_exp = Sink(label='s_exp', inputs={b_exp: Flow()})
-energy_system.add(b_dist, b_prod, b_exp, s_exp)
+class EnergySystem:
+    def __init__(self, input_df, capex=False, **kwargs):
+        self._energy_cost = kwargs.get('energy_cost', 0.22)
+        self._grid_limit = kwargs.get('grid_limit', 485)
+        wacc = kwargs.get('wacc', 0.05)
+        project_life = kwargs.get('project_life', 10)
+        battery_capex = kwargs.get('battery_capex', 500)
+        battery_max_cap = kwargs.get('battery_max_cap', 1000)
+        self._input_data = input_df
+        df_index = input_df.index
+        self._model = None
+        self._energy_system = EnergySystem(timeindex=df_index)
 
-# pv source
-s_pv = Source(label='s_pv',
-              outputs={b_prod: Flow(fix=df400energy['pv'].values, nominal_value=1)})
-energy_system.add(s_pv)
+        # Build energy system
+        # main buses
+        b_dist = Bus(label='b_dist')
+        b_exp = Bus(label='b_exp')
+        b_prod = Bus(label='b_prod', outputs={b_dist: Flow(), b_exp: Flow()})
+        s_exp = Sink(label='s_exp', inputs={b_exp: Flow()})
+        self._energy_system.add(b_dist, b_prod, b_exp, s_exp)
 
-# battery storage
-sto_battery = GenericStorage(label='sto_battery',
-                             inputs={b_dist: Flow(max=400, nominal_value=1)},
-                             outputs={b_dist: Flow(max=400, nominal_value=1)},
-                             nominal_storage_capacity=534,
-                             loss_rate=0.00, initial_storage_level=0,  # Todo: add energy loss
-                             inflow_conversion_factor=1, outflow_conversion_factor=1)
+        # pv source
+        s_pv = Source(label='s_pv',
+                      outputs={b_prod: Flow(fix=df400energy['pv'].values, nominal_value=1)})
+        self._energy_system.add(s_pv)
 
-# battery_in = df400energy[df400energy['battery'] < 0]['battery'].reindex(df_index).replace(np.nan, 0)
-# battery_out = df400energy[df400energy['battery'] > 0]['battery'].reindex(df_index).replace(np.nan, 0)
-# sto_battery = GenericStorage(label='sto_battery',
-#                              inputs={b_dist: Flow(fix=battery_in,
-#                                                   nominal_value=1)},
-#                              outputs={b_dist: Flow(fix=battery_out,
-#                                                    nominal_value=1)},
-#                              nominal_storage_capacity=534,
-#                              loss_rate=0.00, initial_storage_level=0.5,  # Todo: add energy loss
-#                              inflow_conversion_factor=1, outflow_conversion_factor=0.85)
-energy_system.add(sto_battery)
+        # battery storage
+        if 'battery_capacity' in kwargs:
+            sto_battery = GenericStorage(label='sto_battery',
+                                         inputs={b_dist: Flow(max=400, nominal_value=1)},
+                                         outputs={b_dist: Flow(max=400, nominal_value=1)},
+                                         nominal_storage_capacity=kwargs.get('battery_capacity'),
+                                         loss_rate=0.00, initial_storage_level=0,  # Todo: add energy loss
+                                         inflow_conversion_factor=1, outflow_conversion_factor=1)
+        else:
+            epc_battery = economics.annuity(capex=battery_capex, n=project_life, wacc=wacc)
+            sto_battery = GenericStorage(label='sto_battery',
+                                         inputs={b_dist: Flow(max=400, nominal_value=1)},
+                                         outputs={b_dist: Flow(max=400, nominal_value=1)},
+                                         investment=Investment(ep_costs=epc_battery, maximum=battery_max_cap),
+                                         loss_rate=0.00, initial_storage_level=0,  # Todo: add energy loss
+                                         inflow_conversion_factor=1, outflow_conversion_factor=1)
 
-# external markets
-m_grid = Source(label='m_grid',
-                outputs={b_dist: Flow(variable_costs=ENERGY_COST)})
-load = Sink(label='load',
-            inputs={b_dist: Flow(fix=df400energy['load'].values, nominal_value=1)})
-energy_system.add(m_grid, load)
+        self._energy_system.add(sto_battery)
 
-# dispatch optimization
+        # external markets
+        m_grid = Source(label='m_grid',
+                        outputs={b_dist: Flow(variable_costs=ENERGY_COST, max=GRID_LIMIT, nominal_value=1)})
+        load = Sink(label='load',
+                    inputs={b_dist: Flow(fix=df400energy['load'].values, nominal_value=1)})
+        self._energy_system.add(m_grid, load)
 
-model = Model(energy_system)
-model.solve(solver='cbc')
+        # dispatch optimization
+    def solve(self):
+        self._model = Model(self._energy_system)
+        self._model.solve(solver='cbc')
 
-# results
-try:
-    r_dict = dict()
-    results = processing.results(model)
-    results_keys = views.convert_keys_to_strings(results)
+    def results(self):
+        # results
+        try:
+            r_dict = dict()
+            results = processing.results(self._model)
+            results_keys = views.convert_keys_to_strings(results)
 
-    r_dict['pv_self'] = results_keys[('b_prod', 'b_dist')]['sequences']
-    r_dict['pv_curtailed'] = results_keys[('b_prod', 'b_exp')]['sequences']
-    r_dict['battery'] = results_keys[('sto_battery', 'b_dist')]['sequences'] - \
-                        results_keys[('b_dist', 'sto_battery')]['sequences']
-    r_dict['grid'] = results_keys[('m_grid', 'b_dist')]['sequences']
+            r_dict['pv_self'] = results_keys[('b_prod', 'b_dist')]['sequences']
+            r_dict['pv_curtailed'] = results_keys[('b_prod', 'b_exp')]['sequences']
+            r_dict['battery'] = results_keys[('sto_battery', 'b_dist')]['sequences'] - \
+                                results_keys[('b_dist', 'sto_battery')]['sequences']
+            r_dict['grid'] = results_keys[('m_grid', 'b_dist')]['sequences']
+            r_df = pd.DataFrame(r_dict)
 
-    ############################################################
-    # comparison of results
-    pv_total_opt = r_dict['pv_self'] + r_dict['pv_curtailed']
-    pv_total_opt = pv_total_opt.sum()
-    pv_total_400 = df400['uncurtailed_solar_power'].sum() * 0.25
-    selfconsumption_pv_opt = r_dict['pv_self'].sum()
-    selfconsumption_pv = (df400['uncurtailed_solar_power'] - df400['curtailed_power']).sum() * 0.25
-    grid400 = df400['grid_power'].sum() * 0.25
-    grid400_opt = r_dict['grid'].sum()
-except:
-    pass
+            return r_df
+            ############################################################
+            # comparison of results
+            pv_total_opt = r_dict['pv_self'] + r_dict['pv_curtailed']
+            pv_total_opt = pv_total_opt.sum()
+            pv_total_base = df500['uncurtailed_solar_power'].sum() * 0.25
+            selfconsumption_pv_opt = r_dict['pv_self'].sum()
+            selfconsumption_pv_base = (df500['uncurtailed_solar_power'] - df500['curtailed_power']).sum() * 0.25
+            grid_base = df500['grid_power'].sum() * 0.25
+            grid_opt = r_dict['grid'].sum()
+        except:
+            pass
+
+
+if __name__ == '__main__':
+
+    KWARGS = {
+        'battery_capacity': 534,
+        'grid_limit': 500
+    }
+    df400 = pd.read_csv('Results_400limit.csv', sep=",",
+                        index_col='index',
+                        parse_dates=['index'],
+                        date_parser=dateutil.parser.parse)
+    df500 = pd.read_csv('Results_500limit.csv', sep=",",
+                        index_col='index',
+                        parse_dates=['index'],
+                        date_parser=dateutil.parser.parse)
+    df500energy = df500[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
+    df500energy.columns = ['load', 'battery', 'grid', 'pv']
+    es = EnergySystem(input_df=df500energy, capex=False, **KWARGS)
+    es.solve()
+    result = es.results()
