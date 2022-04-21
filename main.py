@@ -157,6 +157,24 @@ es_500 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
 es_500.solve()
 b_500_energy_flow = es_500.flows
 b_500_cost = es_500.costs
+
+# Pie charts
+fig1_b, ax1_b = plt.subplots(2)
+pie_data_400 = (['From grid', 'From PV'],
+                [b_400_energy_flow['grid'].sum(), b_400_energy_flow['pv_self'].sum()])
+pie_data_500 = (['From grid', 'From PV'],
+                [b_500_energy_flow['grid'].sum(), b_500_energy_flow['pv_self'].sum()])
+ax1_b[0].pie(pie_data_400[1],
+          labels=pie_data_400[0],
+          autopct='%1.1f%%',)
+ax1_b[0].set_title('Case B: Load Supply Scenario 400')
+
+
+ax1_b[1].pie(pie_data_500[1],
+          labels=pie_data_500[0],
+          autopct='%1.1f%%',)
+ax1_b[1].set_title('Case B: Load Supply Scenario 500')
+
 ########################################################################
 #########################################################################
 # Sizing storage scenario 485 kW limit
