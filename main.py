@@ -1,7 +1,6 @@
 from model import EnergyModel, cost_calc, power_balance_check, DEMAND_CHARGE, PV_COST, ENERGY_COST
 import pandas as pd
 import dateutil
-import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -43,11 +42,11 @@ LINE_WIDTH = 2.5
 # Cost Share
 fig0_a, ax0_a = plt.subplots(2)
 cgrid400 = a_grid400.sum() * 0.25 * ENERGY_COST
-cpv400 = a_pvself400.sum()*0.25
+cpv400 = a_pvself400.sum()*0.25 * PV_COST
 cpmax400 = a_gridmax400 * DEMAND_CHARGE
 
 cgrid500 = a_grid500.sum() * 0.25 * ENERGY_COST
-cpv500 = a_pvself500.sum()*0.25
+cpv500 = a_pvself500.sum()*0.25 * PV_COST
 cpmax500 = a_gridmax500 * DEMAND_CHARGE
 
 pie_data_400 = (['From grid', 'From PV', 'From max demand'],
@@ -56,14 +55,26 @@ pie_data_500 = (['From grid', 'From PV', 'From max demand'],
                 [cgrid500, cpv500, cpmax500])
 ax0_a[0].pie(pie_data_400[1],
           labels=pie_data_400[0],
-          autopct='%1.1f%%',)
+          autopct=lambda p: f'{p:.2f}%, {(p / 100) * sum(pie_data_400[1]) / 1000:.0f} kEUR')
 ax0_a[0].set_title('Case A: Cost share Scenario 400')
 ax0_a[1].pie(pie_data_500[1],
           labels=pie_data_500[0],
-          autopct='%1.1f%%',)
+          autopct=lambda p: f'{p:.2f}%, {(p / 100) * sum(pie_data_500[1]) /1000:.0f} kEUR')
 ax0_a[1].set_title('Case A: Cost share Scenario 500')
 
+# bar charts
+width = 0.3
+fig01_a, ax01_a = plt.subplots()
+bar_cats = ['grid', 'pv', 'max demand']
+bar_400_vals = [cgrid400 / 1000, cpv400 / 1000, cpmax400 / 1000]
+bar_500_vals = [cgrid500 / 1000, cpv500 / 1000, cpmax500 / 1000]
+ax01_a.bar(np.arange(len(bar_cats)), bar_400_vals, width=width, label='400 Scenario')
+ax01_a.bar(np.arange(len(bar_cats)) + width, bar_500_vals, width=width, label='500 Scenario')
 
+ax01_a.set_xticks([r + width/2 for r in range(len(bar_cats))], bar_cats)
+ax01_a.set_ylabel(' Cost kEUR')
+ax01_a.grid(axis='y')
+ax01_a.legend()
 #######################################################
 # Grid import
 fig_a, ax_a = plt.subplots(1)
@@ -85,14 +96,14 @@ pie_data_400 = (['From grid', 'From PV'],
 pie_data_500 = (['From grid', 'From PV'],
                 [a_grid500.sum(), a_pvself500.sum()])
 ax1_a[0].pie(pie_data_400[1],
-          labels=pie_data_400[0],
-          autopct='%1.1f%%',)
+             labels=pie_data_400[0],
+             autopct='%1.1f%%',)
 ax1_a[0].set_title('Case A: Load Supply Scenario 400')
 
 
 ax1_a[1].pie(pie_data_500[1],
-          labels=pie_data_500[0],
-          autopct='%1.1f%%',)
+             labels=pie_data_500[0],
+             autopct='%1.1f%%',)
 ax1_a[1].set_title('Case A: Load Supply Scenario 500')
 
 ##################################
@@ -115,12 +126,12 @@ y400_pv = -df500[(df400['ess_power'] < 0) &
 
 #pie charts
 ax2_a[0].pie([y400_grid, y400_pv],
-          labels=['From grid', 'From PV'],
-          autopct='%1.1f%%',)
+             labels=['From grid', 'From PV'],
+             autopct='%1.1f%%',)
 ax2_a[0].set_title('Case A: Battery charging 400 Scenario')
 ax2_a[1].pie([y500_grid, y500_pv],
-          labels=['From grid', 'From PV'],
-          autopct='%1.1f%%',)
+             labels=['From grid', 'From PV'],
+             autopct='%1.1f%%',)
 ax2_a[1].set_title('Case A: Battery charging 500 Scenario')
 
 ##########################################################################################
@@ -165,14 +176,14 @@ pie_data_400 = (['From grid', 'From PV'],
 pie_data_500 = (['From grid', 'From PV'],
                 [b_500_energy_flow['grid'].sum(), b_500_energy_flow['pv_self'].sum()])
 ax1_b[0].pie(pie_data_400[1],
-          labels=pie_data_400[0],
-          autopct='%1.1f%%',)
+             labels=pie_data_400[0],
+             autopct='%1.1f%%',)
 ax1_b[0].set_title('Case B: Load Supply Scenario 400')
 
 
 ax1_b[1].pie(pie_data_500[1],
-          labels=pie_data_500[0],
-          autopct='%1.1f%%',)
+             labels=pie_data_500[0],
+             autopct='%1.1f%%',)
 ax1_b[1].set_title('Case B: Load Supply Scenario 500')
 
 ########################################################################
