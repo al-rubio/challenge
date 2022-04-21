@@ -34,6 +34,19 @@ ENERGY_COST = 0.22  # EUR/kWh
 DEMAND_CHARGE = 200  # EUR/kWh
 PV_COST = 0.07  # EUR/kWh
 
+def power_balance_check(df):
+    """
+
+    :param df: dataframe with power series 15 min resol
+    :return: total load imbalance energy (positive=shortage of generation), df with imbalance 15 min resol
+    """
+    gen = df[['uncurtailed_solar_power', 'grid_power']].sum(axis=1) - df['curtailed_power'] + df['ess_power']
+    load = df['load']
+    power_imbalance = (load - gen).round(3)
+
+    a = df[(df['load'] > gen)]
+    return power_imbalance.reindex(a.index).sum() * 0.25, power_imbalance
+
 
 def cost_calc(grid_total, grid_max, pv_self):
     return ENERGY_COST * grid_total + DEMAND_CHARGE * grid_max + PV_COST * pv_self
