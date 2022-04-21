@@ -21,15 +21,17 @@ scn500_imbalance, df_scn500_imbalance = power_balance_check(df500)
 # 400 Scenario
 a_grid400 = df_scn400_imbalance + df400['grid_power']
 a_gridmax400 = a_grid400.max()
+a_pvself400 = (df400['uncurtailed_solar_power']-df400['curtailed_power'])
 a_sc400cost = cost_calc(grid_total=a_grid400.sum()*0.25,
                         grid_max=a_gridmax400,
-                        pv_self=(df400['uncurtailed_solar_power']-df400['curtailed_power']).sum()*0.25)
+                        pv_self=a_pvself400.sum()*0.25)
 # 500 Scenario
 a_grid500 = df_scn500_imbalance + df500['grid_power']
 a_gridmax500 = a_grid500.max()
+a_pvself500 = (df500['uncurtailed_solar_power']-df500['curtailed_power'])
 a_sc500cost = cost_calc(grid_total=a_grid500.sum()*0.25,
                         grid_max=a_gridmax500,
-                        pv_self=(df500['uncurtailed_solar_power']-df500['curtailed_power']).sum()*0.25)
+                        pv_self=a_pvself500.sum()*0.25)
 
 ##########################################################################################
 ##########################################################################################

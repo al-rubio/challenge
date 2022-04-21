@@ -34,6 +34,7 @@ ENERGY_COST = 0.22  # EUR/kWh
 DEMAND_CHARGE = 200  # EUR/kWh
 PV_COST = 0.07  # EUR/kWh
 
+
 def power_balance_check(df):
     """
 
