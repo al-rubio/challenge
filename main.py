@@ -66,6 +66,18 @@ b_500_energy_flow = es_500.flows
 b_500_cost = es_500.costs
 ########################################################################
 #########################################################################
+# Sizing storage scenariio 485 kW limit
+KWARGS = {
+
+        'grid_limit': 485
+    }
+es_sizing = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
+es_sizing.solve()
+c_sizing400_energy_flow = es_sizing.flows
+c_sizing400_cost = es_sizing.costs
+c_sizing400_battery_cap = es_sizing.battery_cap
+
+####################################################################
 # Sizing storage scenariio 500 kW limit
 KWARGS = {
 
@@ -73,8 +85,8 @@ KWARGS = {
     }
 es_sizing = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
 es_sizing.solve()
-ans_sizing500_energy_flow = es_sizing.flows
-c_sizing500_cost = es_sizing.costs
-c_sizing500_battery_cap = es_sizing.battery_cap
+c_sizing500_energy_flow = es_sizing.flows
+d_sizing500_cost = es_sizing.costs
+d_sizing500_battery_cap = es_sizing.battery_cap
 
 ####################################################################
