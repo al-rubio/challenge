@@ -1,6 +1,9 @@
 from model import EnergyModel, cost_calc, power_balance_check
 import pandas as pd
 import dateutil
+import datetime
+import matplotlib.pyplot as plt
+import numpy as np
 
 df400 = pd.read_csv('Results_400limit.csv', sep=",",
                     index_col='index',
@@ -32,63 +35,116 @@ a_pvself500 = (df500['uncurtailed_solar_power']-df500['curtailed_power'])
 a_sc500cost = cost_calc(grid_total=a_grid500.sum()*0.25,
                         grid_max=a_gridmax500,
                         pv_self=a_pvself500.sum()*0.25)
+LINE_WIDTH = 2.5
 
-##########################################################################################
-##########################################################################################
-# Dispatch optimization
-# In the provided input data, batteries are charged from the grid and 400 kW power grid import is not
-# kept
-df400energy = df400[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
-df400energy.columns = ['load', 'battery', 'grid', 'pv']
+# Grid import
+fig_a, ax_a = plt.subplots()
+y400 = a_grid400
+y500 = a_grid500
+a = ax_a.plot(y400, label='Grid import 400kW Scenario', color='blue',
+              linewidth=LINE_WIDTH)
+b = ax_a.plot(y500, label='Grid import 500kW Scenario', color='red',
+              linewidth=LINE_WIDTH)
+ax_a.set_xlabel('Date')
+ax_a.set_ylabel('Power (kW)')
+ax_a.grid(True)
+ax_a.set_title('Case A: From given data')
+ax_a.legend()
 
-df500energy = df500[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
-df500energy.columns = ['load', 'battery', 'grid', 'pv']
-diff = (df400energy - df500energy).sum()
-#################################################################
-# 400 kW Scenario
-# Grid limits below 485 kW led to an unfeasible problem
-KWARGS = {
-        'battery_capacity': 534,
-        'grid_limit': 485
-    }
-es_400 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
-es_400.solve()
-b_400_energy_flow = es_400.flows
-b_400_cost = es_400.costs
-#################################################################
-# 500 kW Scenario
+# Battery discharge
+fig1_a, ax1_a = plt.subplots()
+yload = df400['load']
+y500 = df500[df500['ess_power'] > 0]['ess_power'].reindex(yload.index).replace(np.nan, 0)
+y400 = df400[df400['ess_power'] > 0]['ess_power'].reindex(yload.index).replace(np.nan, 0)
+a = ax1_a.plot(yload, label='Load', color='black',
+               linewidth=LINE_WIDTH)
+b = ax1_a.plot(y500, label='Battery discharge 500kW Scenario', color='red',
+               linewidth=LINE_WIDTH)
+c = ax1_a.plot(y400, label='Battery discharge 400kW Scenario', color='blue',
+               linewidth=LINE_WIDTH)
+ax1_a.set_xlabel('Date')
+ax1_a.set_ylabel('Power (kW)')
+ax1_a.grid(True)
+ax1_a.set_title('Case A: From given data')
+ax1_a.legend()
 
-KWARGS = {
-        'battery_capacity': 534,
-        'grid_limit': 500
-    }
-es_500 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
-es_500.solve()
-b_500_energy_flow = es_500.flows
-b_500_cost = es_500.costs
-########################################################################
-#########################################################################
-# Sizing storage scenariio 485 kW limit
-KWARGS = {
+# Battery charge
+fig2_a, ax2_a = plt.subplots()
+ypv = a_pvself500
+y500_grid = -df500[(df500['ess_power'] < 0) &
+                   (df500['uncurtailed_solar_power'] == 0)]['ess_power'].reindex(yload.index).replace(np.nan, 0).sum() \
+            * 0.25
+y500_pv = -df500[(df500['ess_power'] < 0) &
+                 (df500['uncurtailed_solar_power'] > 0)]['ess_power'].reindex(yload.index).replace(np.nan, 0).sum() \
+            * 0.25
+y400_grid = -df400[(df400['ess_power'] < 0) &
+                   (df400['uncurtailed_solar_power'] == 0)]['ess_power'].reindex(yload.index).replace(np.nan, 0) .sum() \
+            * 0.25
+y400_pv = -df500[(df400['ess_power'] < 0) &
+                 (df400['uncurtailed_solar_power'] > 0)]['ess_power'].reindex(yload.index).replace(np.nan, 0).sum() \
+            * 0.25
 
-        'grid_limit': 485
-    }
-es_sizing = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
-es_sizing.solve()
-c_sizing400_energy_flow = es_sizing.flows
-c_sizing400_cost = es_sizing.costs
-c_sizing400_battery_cap = es_sizing.battery_cap
 
-####################################################################
-# Sizing storage scenariio 500 kW limit
-KWARGS = {
+ax2_a.pie([y500_grid, y500_pv],
+          labels=['From grid', 'From PV'],
+          autopct='%1.1f%%',)
 
-        'grid_limit': 500
-    }
-es_sizing = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
-es_sizing.solve()
-c_sizing500_energy_flow = es_sizing.flows
-d_sizing500_cost = es_sizing.costs
-d_sizing500_battery_cap = es_sizing.battery_cap
-
-####################################################################
+# ##########################################################################################
+# ##########################################################################################
+# # Dispatch optimization
+# # In the provided input data, batteries are charged from the grid and 400 kW power grid import is not
+# # kept
+# df400energy = df400[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
+# df400energy.columns = ['load', 'battery', 'grid', 'pv']
+#
+# df500energy = df500[['load', 'ess_power', 'grid_power', 'uncurtailed_solar_power']].resample('1h').sum() * 0.25
+# df500energy.columns = ['load', 'battery', 'grid', 'pv']
+# diff = (df400energy - df500energy).sum()
+# #################################################################
+# # 400 kW Scenario
+# # Grid limits below 485 kW led to an unfeasible problem
+# KWARGS = {
+#         'battery_capacity': 534,
+#         'grid_limit': 485
+#     }
+# es_400 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
+# es_400.solve()
+# b_400_energy_flow = es_400.flows
+# b_400_cost = es_400.costs
+# #################################################################
+# # 500 kW Scenario
+#
+# KWARGS = {
+#         'battery_capacity': 534,
+#         'grid_limit': 500
+#     }
+# es_500 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
+# es_500.solve()
+# b_500_energy_flow = es_500.flows
+# b_500_cost = es_500.costs
+# ########################################################################
+# #########################################################################
+# # Sizing storage scenariio 485 kW limit
+# KWARGS = {
+#
+#         'grid_limit': 485
+#     }
+# es_sizing = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
+# es_sizing.solve()
+# c_sizing400_energy_flow = es_sizing.flows
+# c_sizing400_cost = es_sizing.costs
+# c_sizing400_battery_cap = es_sizing.battery_cap
+#
+# ####################################################################
+# # Sizing storage scenariio 500 kW limit
+# KWARGS = {
+#
+#         'grid_limit': 500
+#     }
+# es_sizing = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
+# es_sizing.solve()
+# c_sizing500_energy_flow = es_sizing.flows
+# d_sizing500_cost = es_sizing.costs
+# d_sizing500_battery_cap = es_sizing.battery_cap
+#
+# ####################################################################
