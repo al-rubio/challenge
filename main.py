@@ -21,13 +21,16 @@ scn500_imbalance, df_scn500_imbalance = power_balance_check(df500)
 ########################################################################################
 # Cost Calculation with provided input data
 # 400 Scenario
+load = df400['load'].sum() * 0.25
 a_grid400 = df_scn400_imbalance + df400['grid_power']
 a_gridmax400 = a_grid400.max()
 a_pvself400 = (df400['uncurtailed_solar_power']-df400['curtailed_power'])
 a_sc400cost = cost_calc(grid_total=a_grid400.sum()*0.25,
                         grid_max=a_gridmax400,
                         pv_self=a_pvself400.sum()*0.25)
-a_sc400cycles = df400[df400['ess_power'] > 0]['ess_power'].sum() * 0.25 / 534
+a_sc400cycles = df400[df400['ess_power'] < 0]['ess_power'].sum() * 0.25 / 534
+a_batteryusage400 = df400[df400['ess_power'] > 0]['ess_power'].sum() * 0.25 / load
+a_avgsoc400 = df400['ess_soc'].mean()
 # 500 Scenario
 a_grid500 = df_scn500_imbalance + df500['grid_power']
 a_gridmax500 = a_grid500.max()
@@ -35,7 +38,9 @@ a_pvself500 = (df500['uncurtailed_solar_power']-df500['curtailed_power'])
 a_sc500cost = cost_calc(grid_total=a_grid500.sum()*0.25,
                         grid_max=a_gridmax500,
                         pv_self=a_pvself500.sum()*0.25)
-a_sc500cycles = df500[df500['ess_power'] > 0]['ess_power'].sum() * 0.25 / 534
+a_sc500cycles = df500[df500['ess_power'] < 0]['ess_power'].sum() * 0.25 / 534
+a_batteryusage500 = df500[df500['ess_power'] > 0]['ess_power'].sum() * 0.25 / load
+a_avgsoc500 = df500['ess_soc'].mean()
 ######################################################################################
 ######################################################################################
 # plots
@@ -162,7 +167,9 @@ es_400 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
 es_400.solve()
 b_400_energy_flow = es_400.flows
 b_400_cost = es_400.costs
-b_sc400cycles = b_400_energy_flow[b_400_energy_flow['battery'] > 0]['battery'].sum() / 534
+b_sc400cycles = -b_400_energy_flow[b_400_energy_flow['battery'] < 0]['battery'].sum() / 534
+b_battery_usage400 = b_400_energy_flow[b_400_energy_flow['battery'] > 0]['battery'].sum() / load
+b_avgsoc400 = b_400_energy_flow['battery_soc'].mean()
 #################################################################
 # 500 kW Scenario
 
@@ -174,7 +181,9 @@ es_500 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
 es_500.solve()
 b_500_energy_flow = es_500.flows
 b_500_cost = es_500.costs
-b_sc500cycles = b_500_energy_flow[b_500_energy_flow['battery'] > 0]['battery'].sum() / 534
+b_sc500cycles = -b_500_energy_flow[b_500_energy_flow['battery'] < 0]['battery'].sum() / 534
+b_battery_usage500 = b_500_energy_flow[b_500_energy_flow['battery'] > 0]['battery'].sum() / load
+b_avgsoc500 = b_500_energy_flow['battery_soc'].mean()
 #######################################################
 # Cost Share
 fig0_b, ax0_b = plt.subplots(2)
