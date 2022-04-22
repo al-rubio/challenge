@@ -27,6 +27,7 @@ a_pvself400 = (df400['uncurtailed_solar_power']-df400['curtailed_power'])
 a_sc400cost = cost_calc(grid_total=a_grid400.sum()*0.25,
                         grid_max=a_gridmax400,
                         pv_self=a_pvself400.sum()*0.25)
+a_sc400cycles = df400[df400['ess_power'] > 0]['ess_power'].sum() * 0.25 / 534
 # 500 Scenario
 a_grid500 = df_scn500_imbalance + df500['grid_power']
 a_gridmax500 = a_grid500.max()
@@ -34,6 +35,7 @@ a_pvself500 = (df500['uncurtailed_solar_power']-df500['curtailed_power'])
 a_sc500cost = cost_calc(grid_total=a_grid500.sum()*0.25,
                         grid_max=a_gridmax500,
                         pv_self=a_pvself500.sum()*0.25)
+a_sc500cycles = df500[df500['ess_power'] > 0]['ess_power'].sum() * 0.25 / 534
 ######################################################################################
 ######################################################################################
 # plots
@@ -74,6 +76,7 @@ ax01_a.bar(np.arange(len(bar_cats)) + width, bar_500_vals, width=width, label='5
 ax01_a.set_xticks([r + width/2 for r in range(len(bar_cats))], bar_cats)
 ax01_a.set_ylabel(' Cost kEUR')
 ax01_a.grid(axis='y')
+ax01_a.set_title('Case A: Cost share')
 ax01_a.legend()
 #######################################################
 # Grid import
@@ -111,9 +114,11 @@ ax1_a[1].set_title('Case A: Load Supply Scenario 500')
 fig2_a, ax2_a = plt.subplots(2)
 ypv = a_pvself500
 yload = df400['load']
+# battery charge from grid
 y500_grid = -df500[(df500['ess_power'] < 0) &
                    (df500['uncurtailed_solar_power'] == 0)]['ess_power'].reindex(yload.index).replace(np.nan, 0).sum() \
             * 0.25
+# battery charge from pv
 y500_pv = -df500[(df500['ess_power'] < 0) &
                  (df500['uncurtailed_solar_power'] > 0)]['ess_power'].reindex(yload.index).replace(np.nan, 0).sum() \
             * 0.25
@@ -157,6 +162,7 @@ es_400 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
 es_400.solve()
 b_400_energy_flow = es_400.flows
 b_400_cost = es_400.costs
+b_sc400cycles = b_400_energy_flow[b_400_energy_flow['battery'] > 0]['battery'].sum() / 534
 #################################################################
 # 500 kW Scenario
 
@@ -168,7 +174,47 @@ es_500 = EnergyModel(input_df=df500energy, capex=False, **KWARGS)
 es_500.solve()
 b_500_energy_flow = es_500.flows
 b_500_cost = es_500.costs
+b_sc500cycles = b_500_energy_flow[b_500_energy_flow['battery'] > 0]['battery'].sum() / 534
+#######################################################
+# Cost Share
+fig0_b, ax0_b = plt.subplots(2)
+cgrid400 = b_400_energy_flow['grid'].sum() * ENERGY_COST
+cpv400 = b_400_energy_flow['pv_self'].sum() * PV_COST
+cpmax400 = b_400_energy_flow['grid'].max() * DEMAND_CHARGE
 
+cgrid500 = b_500_energy_flow['grid'].sum() * ENERGY_COST
+cpv500 = b_500_energy_flow['pv_self'].sum() * PV_COST
+cpmax500 = b_500_energy_flow['grid'].max() * DEMAND_CHARGE
+
+pie_data_400 = (['From grid', 'From PV', 'From max demand'],
+                [cgrid400, cpv400, cpmax400])
+pie_data_500 = (['From grid', 'From PV', 'From max demand'],
+                [cgrid500, cpv500, cpmax500])
+ax0_b[0].pie(pie_data_400[1],
+          labels=pie_data_400[0],
+          autopct=lambda p: f'{p:.2f}%, {(p / 100) * sum(pie_data_400[1]) / 1000:.0f} kEUR')
+ax0_b[0].set_title('Case B: Cost share Scenario 400')
+ax0_b[1].pie(pie_data_500[1],
+          labels=pie_data_500[0],
+          autopct=lambda p: f'{p:.2f}%, {(p / 100) * sum(pie_data_500[1]) /1000:.0f} kEUR')
+ax0_b[1].set_title('Case B: Cost share Scenario 500')
+
+# bar charts
+width = 0.3
+fig01_b, ax01_b = plt.subplots()
+bar_cats = ['grid', 'pv', 'max demand']
+bar_400_vals = [cgrid400 / 1000, cpv400 / 1000, cpmax400 / 1000]
+bar_500_vals = [cgrid500 / 1000, cpv500 / 1000, cpmax500 / 1000]
+ax01_b.bar(np.arange(len(bar_cats)), bar_400_vals, width=width, label='400 Scenario')
+ax01_b.bar(np.arange(len(bar_cats)) + width, bar_500_vals, width=width, label='500 Scenario')
+
+ax01_b.set_xticks([r + width/2 for r in range(len(bar_cats))], bar_cats)
+ax01_b.set_ylabel(' Cost kEUR')
+ax01_b.grid(axis='y')
+ax01_b.set_title('Case B: Cost share')
+ax01_b.legend()
+#######################################################
+# PV and grid share of supply
 # Pie charts
 fig1_b, ax1_b = plt.subplots(2)
 pie_data_400 = (['From grid', 'From PV'],
@@ -185,6 +231,38 @@ ax1_b[1].pie(pie_data_500[1],
              labels=pie_data_500[0],
              autopct='%1.1f%%',)
 ax1_b[1].set_title('Case B: Load Supply Scenario 500')
+##################################
+# Battery charge
+fig2_b, ax2_b = plt.subplots(2)
+# ypv = a_pvself500
+yload = df400['load'].resample('1h').sum()
+# battery charge from grid
+y500_grid = -b_500_energy_flow[(b_500_energy_flow['battery'] < 0) &
+                               (b_500_energy_flow['pv_self'] == 0)]['battery'].reindex(yload.index).replace(np.nan,
+                                                                                                            0).sum()
+# battery charge from pv
+y500_pv = -b_500_energy_flow[(b_500_energy_flow['battery'] < 0) &
+                               (b_500_energy_flow['pv_self'] > 0)]['battery'].reindex(yload.index).replace(np.nan,
+                                                                                                           0).sum()
+
+# battery charge from grid
+y400_grid = -b_400_energy_flow[(b_400_energy_flow['battery'] < 0) &
+                               (b_400_energy_flow['pv_self'] == 0)]['battery'].reindex(yload.index).replace(np.nan,
+                                                                                                            0).sum()
+# battery charge from pv
+y400_pv = -b_400_energy_flow[(b_400_energy_flow['battery'] < 0) &
+                             (b_400_energy_flow['pv_self'] > 0)]['battery'].reindex(yload.index).replace(np.nan,
+                                                                                                         0).sum()
+#pie charts
+ax2_b[0].pie([y400_grid, y400_pv],
+             labels=['From grid', 'From PV'],
+             autopct='%1.1f%%',)
+ax2_b[0].set_title('Case B: Battery charging 400 Scenario')
+ax2_b[1].pie([y500_grid, y500_pv],
+             labels=['From grid', 'From PV'],
+             autopct='%1.1f%%',)
+ax2_b[1].set_title('Case B: Battery charging 500 Scenario')
+
 
 ########################################################################
 #########################################################################
